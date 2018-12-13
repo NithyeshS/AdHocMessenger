@@ -77,14 +77,17 @@ public class WiFiDirectBroadcastReceiver extends BroadcastReceiver {
                         (ConnectionInfoListener) activity);
             } else {
                 // It's a disconnect
+                ((WiFiServiceDiscoveryActivity) activity).isInitiatingConnection = false;
                 Log.d(WiFiServiceDiscoveryActivity.TAG,
-                        "Disconnected from p2p network.");
+                        "Disconnected from p2p network. Reason " + networkInfo.getReason());
             }
         } else if (WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION
                 .equals(action)) {
 
             WifiP2pDevice device = (WifiP2pDevice) intent
                     .getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE);
+            WiFiServiceDiscoveryActivity.deviceName = device.deviceName;
+            WiFiServiceDiscoveryActivity.deviceAddress = device.deviceAddress;
             Log.d(WiFiServiceDiscoveryActivity.TAG, "Device status - " + WiFiDirectServicesList.getDeviceStatus(device.status));
 
         }

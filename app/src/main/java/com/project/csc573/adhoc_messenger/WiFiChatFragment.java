@@ -28,7 +28,7 @@ public class WiFiChatFragment extends Fragment {
     private TextView chatLine;
     private ListView listView;
     ChatMessageAdapter adapter = null;
-    private List<String> items = new ArrayList<String>();
+    private List<String> items = new ArrayList<>();
 
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
@@ -40,8 +40,8 @@ public class WiFiChatFragment extends Fragment {
                 .permitAll().build();
         StrictMode.setThreadPolicy(policy);
 
-        chatLine = (TextView) view.findViewById(R.id.txtChatLine);
-        listView = (ListView) view.findViewById(android.R.id.list);
+        chatLine =  view.findViewById(R.id.txtChatLine);
+        listView =  view.findViewById(android.R.id.list);
         adapter = new ChatMessageAdapter(getActivity(), android.R.id.text1,
                 items);
         listView.setAdapter(adapter);
@@ -58,19 +58,31 @@ public class WiFiChatFragment extends Fragment {
                                     .getBytes());
                             pushMessage("Me: " + chatLine.getText().toString());
                             chatLine.setText("");
-                            chatLine.clearFocus();
                         }
                     }
                 });
         return view;
     }
 
-    public interface MessageTarget {
-        public Handler getHandler();
-    }
-
     public void setChatManager(ChatManager obj) {
         chatManager = obj;
+    }
+
+    public void echoMsg(String msg) {
+        if (chatManager != null) {
+            try {
+                Thread.sleep(1000);
+                Log.d(WiFiServiceDiscoveryActivity.TAG,
+                        "Writing msg to ChatManager. Msg is " +
+                                msg);
+                chatManager.write(msg.getBytes());
+                pushMessage("Me: " + msg);
+//                chatLine.setText("");
+            }
+            catch (InterruptedException ie) {
+                Log.e(WiFiServiceDiscoveryActivity.TAG, "echoMsg() sleep thread was interrupted");
+            }
+        }
     }
 
     public void pushMessage(String readMessage) {
@@ -100,8 +112,7 @@ public class WiFiChatFragment extends Fragment {
             }
             String message = items.get(position);
             if (message != null && !message.isEmpty()) {
-                TextView nameText = (TextView) v
-                        .findViewById(android.R.id.text1);
+                TextView nameText = v.findViewById(android.R.id.text1);
 
                 if (nameText != null) {
                     nameText.setText(message);

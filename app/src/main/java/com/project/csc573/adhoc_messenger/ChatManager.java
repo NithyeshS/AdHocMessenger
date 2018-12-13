@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.Socket;
+import java.net.SocketException;
 
 /**
  * Handles reading and writing of messages with socket buffers. Uses a Handler
@@ -25,8 +26,9 @@ public class ChatManager implements Runnable {
 
     private InputStream iStream;
     private OutputStream oStream;
-    private static final String TAG = "adhocmessenger-ChatHandler";
+    private static final String TAG = "adhocm-ChatHandler";
 
+//    public static boolean isRunning = true;
     @Override
     public void run() {
         try {
@@ -38,16 +40,19 @@ public class ChatManager implements Runnable {
             handler.obtainMessage(WiFiServiceDiscoveryActivity.MY_HANDLE, this)
                     .sendToTarget();
 
-            while (true) {
+            while (!socket.isClosed()) {
                 try {
                     // Read from the InputStream
+                    if(socket.isClosed())
+                        break;
+                    Log.d(TAG, "ISCLOSED: " + socket.isClosed() + " - ISCONNECTED: " + socket.isConnected());
                     bytes = iStream.read(buffer);
                     if (bytes == -1) {
                         break;
                     }
 
                     // Send the obtained bytes to the UI Activity
-                    Log.d(TAG, "Rec:" + String.valueOf(buffer));
+                    Log.d(TAG, "Rec:" + buffer.toString());
                     handler.obtainMessage(WiFiServiceDiscoveryActivity.MESSAGE_READ,
                             bytes, -1, buffer).sendToTarget();
                 } catch (IOException e) {
@@ -58,6 +63,7 @@ public class ChatManager implements Runnable {
             e.printStackTrace();
         } finally {
             try {
+
                 socket.close();
             } catch (IOException e) {
                 e.printStackTrace();
@@ -68,8 +74,10 @@ public class ChatManager implements Runnable {
     public void write(byte[] buffer) {
         try {
             oStream.write(buffer);
+        } catch(SocketException se) {
+            Log.e(TAG, "Exception during write - " + se.getMessage());
         } catch (IOException e) {
-            Log.e(TAG, "Exception during write", e);
+            Log.e(TAG, "Exception during write - " + e.getMessage());
         }
     }
 
