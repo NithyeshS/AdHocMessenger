@@ -75,11 +75,11 @@ public class WiFiDirectServicesList extends ListFragment {
                         .findViewById(android.R.id.text1);
 
                 if (nameText != null) {
-                    nameText.setText(service.device.deviceName + " - " + service.instanceName);
+                    nameText.setText(service.deviceName + " - " + service.instanceName);
                 }
                 TextView statusText = (TextView) v
                         .findViewById(android.R.id.text2);
-                statusText.setText(getDeviceStatus(service.device.status));
+                statusText.setText(getDeviceStatus(service.deviceStatus));
             }
             return v;
         }

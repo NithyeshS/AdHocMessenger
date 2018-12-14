@@ -88,6 +88,7 @@ public class WiFiDirectBroadcastReceiver extends BroadcastReceiver {
                     .getParcelableExtra(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE);
             WiFiServiceDiscoveryActivity.deviceName = device.deviceName;
             WiFiServiceDiscoveryActivity.deviceAddress = device.deviceAddress;
+            Log.d(WiFiServiceDiscoveryActivity.TAG, "MAC - " + device.deviceAddress);
             Log.d(WiFiServiceDiscoveryActivity.TAG, "Device status - " + WiFiDirectServicesList.getDeviceStatus(device.status));
 
         }

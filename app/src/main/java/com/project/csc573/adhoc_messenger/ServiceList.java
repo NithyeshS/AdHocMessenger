@@ -1,6 +1,5 @@
 package com.project.csc573.adhoc_messenger;
 /*
- * Copyright (C) 2015-2016 Stefano Cappa
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -63,19 +62,28 @@ public class ServiceList {
         boolean add = true;
         boolean update = false;
         int updateIndex = -1;
+
+
+
         for (WiFiP2pService element : serviceList) {
-            if (element.device.equals(service.device)
-                    && element.instanceName.equals(service.instanceName)) {
-                update = true;
-                updateIndex = serviceList.indexOf(element);
-                add = false; //already in the list
+            if (element.deviceAddress.equals(service.deviceAddress)) {
+//                if(element.isDirect && !service.isDirect){
+                    // Skip if a direct peer is added via an indirect peer
+                    add = false;
+//                    update = false;
+//                }
+                /*if((element.isDirect && service.isDirect) || (!element.isDirect && !service.isDirect)) {
+                    update = true;
+                    updateIndex = serviceList.indexOf(element);
+                    add = false; //already in the list
+                }*/
             }
         }
 
-        if (update) {
-            serviceList.remove(updateIndex);
-            serviceList.add(service);
-        }
+//        if (update) {
+//            serviceList.remove(updateIndex);
+//            serviceList.add(service);
+//        }
 
         if(add) {
             serviceList.add(service);
@@ -91,8 +99,16 @@ public class ServiceList {
         boolean update = false;
         int updateIndex = -1;
         for (WiFiP2pService element : serviceList) {
-            if (element.device.equals(service.device)
+            if (element.deviceAddress.equals(service.deviceAddress)
+                    && element.nextHopAddress.equals(service.nextHopAddress)
                     && element.instanceName.equals(service.instanceName)) {
+                update = true;
+                updateIndex = serviceList.indexOf(element);
+            }
+
+            if (element.deviceAddress.equals(service.deviceAddress)
+                    && element.instanceName.equals(WiFiServiceDiscoveryActivity.SERVICE_INSTANCE_INDIRECT)
+                    && service.instanceName.equals(WiFiServiceDiscoveryActivity.SERVICE_INSTANCE_DIRECT)) {
                 update = true;
                 updateIndex = serviceList.indexOf(element);
             }
@@ -105,6 +121,7 @@ public class ServiceList {
 
         return update;
     }
+
     /**
      * Method to get a service from the list, using only the device.
      * This method use only the deviceAddress, not the device name, because sometimes Android doesn't
@@ -118,7 +135,7 @@ public class ServiceList {
         }
 
         for (WiFiP2pService element : serviceList) {
-            if (element.device.deviceAddress.equals(device.deviceAddress) ) {
+            if (element.deviceAddress.equals(device.deviceAddress) ) {
                 return element;
             }
         }
@@ -128,11 +145,33 @@ public class ServiceList {
     public String getDeviceNames() {
         String deviceNames = "";
         for (WiFiP2pService element : serviceList) {
+            if (!element.isDirect) continue;
             if (deviceNames.length() > 0)
-                deviceNames = deviceNames + "#-#";
-            deviceNames = deviceNames + element.device.deviceName + "#=#" + element.device.deviceAddress;
+                deviceNames = deviceNames + "###";
+            deviceNames = deviceNames + element.deviceName + "%%" + element.deviceAddress + "%%"
+                    + element.deviceStatus;
         }
-        return  deviceNames;
+        return deviceNames;
+    }
+
+    public List<String> showRoutingTable() {
+        List<String> routes = new ArrayList<>();
+        for (WiFiP2pService element : serviceList) {
+            String route = element.deviceName + " - " + element.deviceAddress + " - "
+                    + WiFiDirectServicesList.getDeviceStatus(element.deviceStatus) + " - "
+                    + element.nextHopName + " - " + element.nextHopAddress;
+            routes.add(route);
+        }
+        return routes;
+    }
+
+    public WiFiP2pService getNextHop(String destMAC) {
+        for (WiFiP2pService element : serviceList) {
+            if (element.deviceAddress.equals(destMAC)) {
+                return element;
+            }
+        }
+        return null;
     }
 
     /**

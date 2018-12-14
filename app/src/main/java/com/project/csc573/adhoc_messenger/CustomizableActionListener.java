@@ -1,7 +1,6 @@
 package com.project.csc573.adhoc_messenger;
 
 /*
- * Copyright (C) 2015-2016 Stefano Cappa
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,31 +20,14 @@ import android.support.annotation.NonNull;
 import android.util.Log;
 import android.widget.Toast;
 
-/**
- * Extremely customizable WifiP2pManager.ActionListener.
- * The only parameter of the constructor the can't be null, is context.
- * If tag==null, this class chooses a default tag "ActionListenerTag".
- * <p></p>
- * For example, if successToast==null, the Toasts in onSuccess will never displayed.
- * <p></p>
- * Created by Stefano Cappa on 18/02/15.
- */
+
 public class CustomizableActionListener implements WifiP2pManager.ActionListener {
 
     private final Context context;
     private final String successLog, successToast, failLog, failToast, tag;
 
 
-    /**
-     * Constructor of CustomizableActionListener.
-     * successLog, successToast, failLog, failToast can be == null, and if this happens the associated action is skipped.
-     * @param context Context necessary to display Toasts.
-     * @param tag String that represents the tag for Log.d, but if is == null, this constructor uses "ActionListenerTag" as tag.
-     * @param successLog String that represent the message for Log.d in onSuccess
-     * @param successToast String that represent the message for Toasts in onSuccess
-     * @param failLog String that represent the message for Log.d in onFailure. The failure code will be added automatically.
-     * @param failToast String that represent the message for Toasts in onFailure
-     */
+
     public CustomizableActionListener(@NonNull Context context,
                                       String tag,
                                       String successLog, String successToast,

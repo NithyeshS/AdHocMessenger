@@ -72,7 +72,6 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
     private WifiP2pDnsSdServiceInfo mIndirectService=null;
     public static final int MESSAGE_READ = 0x400 + 1;
     public static final int MY_HANDLE = 0x400 + 2;
-    public static  final int MESSAGE_DISCONNECT = 0x400 + 3;
     private WifiP2pManager manager;
 
     private final long SERVICE_BROADCASTING_INTERVAL = 30000;
@@ -89,6 +88,8 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
     private Thread socketHandler;
     final Handler mServiceBroadcastingHandler = new Handler();
     final Handler mServiceDiscoveringHandler = new Handler();
+    final Handler mForwardMsgHandler = new Handler();
+    final Handler mForwardMsgConnectionHandler = new Handler();
     private WiFiChatFragment chatFragment;
     private WiFiDirectServicesList servicesList;
 
@@ -101,7 +102,10 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
     public static String deviceAddress="";
 
     public boolean isInitiatingConnection = false;
+    public boolean isForwardingMsg = false;
+    public List<String> forwardMsgQueue = new ArrayList<>();
     public String connectedDeviceName="";
+    public String connectedDeviceMAC="";
 
     private Handler handler = new Handler(this);
 
@@ -111,6 +115,68 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
 
     public void setHandler(Handler handler) {
         this.handler = handler;
+    }
+
+    private String DEVICE_A = "82:58:f8:67:9f:33"; // MotoNIsh
+    private String DEVICE_B = "82:58:f8:0e:1c:41"; // MotoNithyesh
+    private String DEVICE_C = "d6:63:c6:d9:51:c1"; // MotoUddeshay
+    private String DEVICE_D = "3a:80:df:97:31:eb"; //  MotoG6
+    private String DEVICE_E = "64:a2:f9:3d:ae:03"; // SruthiOneplus
+    private String DEVICE_F = "d2:04:01:60:34:db"; // MotoSruthi
+    private String DEVICE_G = "ee:9b:f3:99:f4:9f"; // Galaxy
+    private String DEVICE_H = "c4:ee:fb:91:b6:a3"; // AkhileshOneplus
+
+    public List<String> getAllowedDirectPeers(String deviceMAC) {
+        List<String> allowedList = new ArrayList<>();
+        if(deviceMAC.equals(DEVICE_A)) {
+            allowedList.add(DEVICE_B);
+            allowedList.add(DEVICE_C);
+            allowedList.add(DEVICE_D);
+        }
+        if(deviceMAC.equals(DEVICE_B)) {
+            allowedList.add(DEVICE_A);
+            allowedList.add(DEVICE_C);
+            allowedList.add(DEVICE_D);
+        }
+        if(deviceMAC.equals(DEVICE_C)) {
+            allowedList.add(DEVICE_A);
+            allowedList.add(DEVICE_B);
+            allowedList.add(DEVICE_D);
+        }
+        if(deviceMAC.equals(DEVICE_D)) {
+            allowedList.add(DEVICE_A);
+            allowedList.add(DEVICE_B);
+            allowedList.add(DEVICE_C);
+            allowedList.add(DEVICE_E);
+            allowedList.add(DEVICE_F);
+            allowedList.add(DEVICE_G);
+            allowedList.add(DEVICE_H);
+        }
+        if(deviceMAC.equals(DEVICE_E)) {
+            allowedList.add(DEVICE_D);
+            allowedList.add(DEVICE_F);
+            allowedList.add(DEVICE_G);
+            allowedList.add(DEVICE_H);
+        }
+        if(deviceMAC.equals(DEVICE_F)) {
+            allowedList.add(DEVICE_D);
+            allowedList.add(DEVICE_E);
+            allowedList.add(DEVICE_G);
+            allowedList.add(DEVICE_H);
+        }
+        if(deviceMAC.equals(DEVICE_G)) {
+            allowedList.add(DEVICE_D);
+            allowedList.add(DEVICE_E);
+            allowedList.add(DEVICE_F);
+            allowedList.add(DEVICE_H);
+        }
+        if(deviceMAC.equals(DEVICE_H)) {
+            allowedList.add(DEVICE_D);
+            allowedList.add(DEVICE_E);
+            allowedList.add(DEVICE_F);
+            allowedList.add(DEVICE_G);
+        }
+        return allowedList;
     }
 
     /** Called when the activity is first created. */
@@ -296,10 +362,11 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
                         });
 
                 String directPeersList = ""; //ServiceList.getInstance().getDeviceNames();
-                Map<String, String> record1 = new HashMap<>();
+                Map<String, String> record1 = new HashMap<String,String>();
                 record.put(TXTRECORD_INDIRECT_KEY, directPeersList);
                 mIndirectService = WifiP2pDnsSdServiceInfo.newInstance(
                         SERVICE_INSTANCE_INDIRECT, SERVICE_REG_TYPE, record1);
+                Log.d(TAG,"CONTENTS OF mINDIRECTSERVICE - " + mIndirectService.toString());
                 manager.addLocalService(channel, mIndirectService, new ActionListener() {
                     @Override
                     public void onSuccess() {
@@ -334,6 +401,10 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
 
                 @Override
                 public void onFailure(int error) {
+
+                    if(waitDialog.isShowing())
+                        waitDialog.dismiss();
+                    isInitiatingConnection = false;
                     appendStatus("Failed to start peer discovery");
                 }
             });
@@ -356,45 +427,60 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
 
                         if (instanceName.equalsIgnoreCase(SERVICE_INSTANCE_DIRECT)) {
 
-                            // update the UI and add the item the discovered device.
-                            WiFiDirectServicesList fragment = (WiFiDirectServicesList) getFragmentManager()
-                                    .findFragmentByTag("services");
-                            if (fragment != null) {
-                                WiFiDevicesAdapter adapter = ((WiFiDevicesAdapter) fragment
-                                        .getListAdapter());
-                                WiFiP2pService service = new WiFiP2pService();
-                                service.device=srcDevice;
-                                service.instanceName=instanceName;
-                                service.serviceRegistrationType=registrationType;
-
-                                Log.d(WiFiServiceDiscoveryActivity.TAG,
-                                        srcDevice.deviceName + " was discovered");
-
-                                if(ServiceList.getInstance().addServiceIfNotPresent(service)) {
-                                    adapter.add(service);
-                                    adapter.notifyDataSetChanged();
-                                    Log.d(TAG, "onBonjourServiceAvailable "
-                                            + instanceName);
+                            boolean deviceAllowed = false;
+                            // Check if current device is allowed
+                            for (String deviceMAC : getAllowedDirectPeers(deviceAddress)) {
+                                if (srcDevice.deviceAddress.equals(deviceMAC)) {
+                                    deviceAllowed = true;
+                                    break;
                                 }
-                                if(ServiceList.getInstance().updateExistingService(service)) {
-                                    adapter.clear();
-                                    int serviceListSize = ServiceList.getInstance().getSize();
-                                    for (int i=0; i < serviceListSize; i++) {
-                                        adapter.add(ServiceList.getInstance().getElementByPosition(i));
+                            }
+
+                            if (deviceAllowed) {
+                                // update the UI and add the item the discovered device.
+                                WiFiDirectServicesList fragment = (WiFiDirectServicesList) getFragmentManager()
+                                        .findFragmentByTag("services");
+                                if (fragment != null) {
+                                    WiFiDevicesAdapter adapter = ((WiFiDevicesAdapter) fragment
+                                            .getListAdapter());
+                                    WiFiP2pService service = new WiFiP2pService();
+                                    service.deviceName = srcDevice.deviceName;
+                                    service.deviceAddress = srcDevice.deviceAddress;
+                                    service.isDirect = true;
+                                    service.nextHopAddress = srcDevice.deviceAddress;
+                                    service.nextHopName = srcDevice.deviceName;
+                                    service.deviceStatus = srcDevice.status;
+                                    service.instanceName = instanceName;
+
+                                    Log.d(WiFiServiceDiscoveryActivity.TAG,
+                                            srcDevice.deviceName + " was discovered");
+
+                                    if (ServiceList.getInstance().addServiceIfNotPresent(service)) {
+                                        adapter.add(service);
+                                        adapter.notifyDataSetChanged();
+                                        Log.d(TAG, "onBonjourServiceAvailable "
+                                                + instanceName);
                                     }
-                                    adapter.notifyDataSetChanged();
-                                    Log.d(TAG, "onBonjourServiceUpdated "
-                                            + instanceName);
+                                    if (ServiceList.getInstance().updateExistingService(service)) {
+                                        adapter.clear();
+                                        int serviceListSize = ServiceList.getInstance().getSize();
+                                        for (int i = 0; i < serviceListSize; i++) {
+                                            adapter.add(ServiceList.getInstance().getElementByPosition(i));
+                                        }
+                                        adapter.notifyDataSetChanged();
+                                        Log.d(TAG, "onBonjourServiceUpdated "
+                                                + instanceName);
+
+                                    }
+                                    updateIndirectDiscoveryServiceBroadcast();
 
                                 }
-                                updateIndirectDiscoveryServiceBroadcast();
+                            }
+                            if (instanceName.equalsIgnoreCase(SERVICE_INSTANCE_INDIRECT)) {
+                                // We are getting direct peer updates from some other device
+                                appendStatus("Discovered an indirect peers update service from " + srcDevice.deviceName);
 
                             }
-                        }
-                        if (instanceName.equalsIgnoreCase(SERVICE_INSTANCE_INDIRECT)) {
-                            // We are getting direct peer updates from some other device
-                            appendStatus("Discovered an indirect peers update service from " + srcDevice.deviceName);
-
                         }
                     }
                 }, new WifiP2pManager.DnsSdTxtRecordListener() {
@@ -409,10 +495,23 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
                         }
 
                         if(fullDomainName.contains(SERVICE_INSTANCE_INDIRECT.toLowerCase())) {
-                            Log.d(TAG, fullDomainName + " --- " + device.deviceName
-                                    + " - direct peers -  "
-                                    + record.get(TXTRECORD_INDIRECT_KEY));
-                            updateRouteTable(device.deviceAddress, record.get(TXTRECORD_INDIRECT_KEY));
+
+                            boolean deviceAllowed = false;
+                            // Check if current device is allowed
+                            for (String deviceMAC : getAllowedDirectPeers(deviceAddress)) {
+                                if (device.deviceAddress.equals(deviceMAC)) {
+                                    deviceAllowed = true;
+                                    break;
+                                }
+                            }
+
+                            if (deviceAllowed) {
+                                Log.d(TAG, fullDomainName + " --- " + device.deviceName
+                                        + " - direct peers -  "
+                                        + record.get(TXTRECORD_INDIRECT_KEY));
+                                updateRouteTable(device.deviceName, device.deviceAddress,
+                                        record.get(TXTRECORD_INDIRECT_KEY));
+                            }
                         }
                     }
                 });
@@ -477,10 +576,12 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
                     Log.d(TAG, "Removed existing service for indirect discovery");
 
                     String directPeersList = ServiceList.getInstance().getDeviceNames();
-                    Map<String, String> record = new HashMap<>();
+                    Map<String, String> record = new HashMap<String,String>();
                     record.put(TXTRECORD_INDIRECT_KEY, directPeersList);
                     mIndirectService = WifiP2pDnsSdServiceInfo.newInstance(
                             SERVICE_INSTANCE_INDIRECT, SERVICE_REG_TYPE, record);
+                    Log.d(TAG,"CONTENTS OF mINDIRECTSERVICE - " + mIndirectService.toString());
+                    Log.d(TAG, "ADDING indirect - " + record.toString());
                     manager.addLocalService(channel, mIndirectService, new ActionListener() {
                         @Override
                         public void onSuccess() {
@@ -504,16 +605,77 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
         }
     }
 
-    public void updateRouteTable(String nextHopMAC, String devicesList) {
+    public void updateRouteTable(String nextHopName, String nextHopMAC, String devicesList) {
+        if (devicesList == null)
+            return;
+        WiFiDirectServicesList fragment = (WiFiDirectServicesList) getFragmentManager()
+                .findFragmentByTag("services");
+        if (fragment != null) {
+            WiFiDevicesAdapter adapter = ((WiFiDevicesAdapter) fragment.getListAdapter());
 
+            Log.d(TAG, "IN UPDATE ROUTE TABLE --- " + devicesList);
+            String[] devicesInfo = devicesList.split("###");
+            for (String device : devicesInfo) {
+
+                Log.d(TAG, "Device info - " + device);
+                String[] deviceInfo = device.split("%%");
+                Log.d(TAG, "Device info - " + deviceInfo.toString());
+                if(deviceInfo.length != 3 || deviceInfo[0] == "") // Invalid data
+                    continue;
+
+                if(deviceInfo[1].equals(deviceAddress)) // Data about current device
+                    continue;
+
+                WiFiP2pService service = new WiFiP2pService();
+                service.isDirect = false;
+                service.deviceName = deviceInfo[0];
+                service.deviceAddress = deviceInfo[1];
+                service.deviceStatus = Integer.parseInt(deviceInfo[2]);
+                service.nextHopAddress=nextHopMAC;
+                service.nextHopName=nextHopName;
+                service.instanceName=SERVICE_INSTANCE_INDIRECT;
+                if (ServiceList.getInstance().addServiceIfNotPresent(service)) {
+                    adapter.add(service);
+                    adapter.notifyDataSetChanged();
+                    Log.d(TAG, "onBonjourServiceAvailable "
+                            + service.instanceName);
+                }
+                if (ServiceList.getInstance().updateExistingService(service)) {
+                    adapter.clear();
+                    int serviceListSize = ServiceList.getInstance().getSize();
+                    for (int i = 0; i < serviceListSize; i++) {
+                        adapter.add(ServiceList.getInstance().getElementByPosition(i));
+                    }
+                    adapter.notifyDataSetChanged();
+                    Log.d(TAG, "onBonjourServiceUpdated "
+                            + service.instanceName);
+
+                }
+
+            }
+
+            Log.d(TAG, "AFTER ROUTE UPDATE:");
+            List<String> routes = ServiceList.getInstance().showRoutingTable();
+            if(routes.size() > 0) {
+                for (String route : routes) {
+                    Log.d(TAG, route);
+                }
+            }
+
+        }
     }
 
     @Override
     public void connectP2p(final WiFiP2pService service) {
         final WifiP2pConfig config = new WifiP2pConfig();
-        config.deviceAddress = service.device.deviceAddress;
         config.wps.setup = WpsInfo.PBC;
-        connectedDeviceName=service.device.deviceName;
+        if(service.isDirect) {
+            config.deviceAddress = service.deviceAddress;
+        } else {
+            config.deviceAddress = service.nextHopAddress;
+        }
+        connectedDeviceName=service.deviceName;
+        connectedDeviceMAC=service.deviceAddress;
         if (serviceRequest != null)
             manager.removeServiceRequest(channel, serviceRequest,
                     new ActionListener() {
@@ -583,105 +745,144 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
                     Log.d(TAG, "DATA: " + data.toString() + "---" + data.length);
                     Log.d(TAG, data[0] + ": " + data[data.length - 1]);
 //                (chatFragment).echoMsg(readMessage);
-                    AlertDialog.Builder builder = new AlertDialog.Builder(this);
-                    builder.setTitle("Message from " + data[0] + "-" + data[1]);
-                    builder.setMessage(data[data.length - 1]);
+                    // Data is meant for this device
+                    if (data[data.length - 2].equals(deviceAddress)) {
+                        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+                        builder.setTitle("Message from " + data[0] + "-" + data[1]);
+                        builder.setMessage(data[data.length - 1]);
+                        connectedDeviceName = data[0];
+                        connectedDeviceMAC = data[1];
 
-                    // Set up the buttons
-                    builder.setPositiveButton("Reply", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which) {
-                            AlertDialog.Builder builder1 = new AlertDialog.Builder(WiFiServiceDiscoveryActivity.this);
-                            builder1.setTitle("Connected to " + connectedDeviceName);
+                        // Set up the buttons
+                        builder.setPositiveButton("Reply", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                AlertDialog.Builder builder1 = new AlertDialog.Builder(WiFiServiceDiscoveryActivity.this);
+                                builder1.setTitle("Connected to " + connectedDeviceName);
 
-                            // Set up the input
-                            final EditText input1 = new EditText(WiFiServiceDiscoveryActivity.this);
+                                // Set up the input
+                                final EditText input1 = new EditText(WiFiServiceDiscoveryActivity.this);
 
-                            input1.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-                            input1.setSingleLine(false);
-//                            input1.setLines(5);
-//                            input1.setMaxLines(5);
-                            input1.setGravity(Gravity.START);
-                            builder1.setView(input1);
+                                input1.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+                                input1.setSingleLine(false);
+    //                            input1.setLines(5);
+    //                            input1.setMaxLines(5);
+                                input1.setGravity(Gravity.START);
+                                builder1.setView(input1);
 
-                            // Set up the buttons
-                            builder1.setPositiveButton("Send", new DialogInterface.OnClickListener() {
-                                @Override
-                                public void onClick(DialogInterface dialog, int which) {
-                                    if (chatManager != null) {
-                                        Log.d(TAG, "Writing msg to ChatManager. Msg is " +
-                                                input1.getText().toString());
-                                        String messageStr = deviceName + "#=#" + deviceAddress + "#=#" +
-                                                input1.getText().toString();
-                                        chatManager.write(messageStr.getBytes());
-                                        dialog.dismiss();
-                                        appendStatus("Message sent");
-                                    }
-                                }
-                            });
-                            builder1.setNegativeButton("Disconnect", new DialogInterface.OnClickListener() {
-                                @Override
-                                public void onClick(DialogInterface dialog, int which) {
-
-                                    // Disconnect from device if we are the GO
-                                    isInitiatingConnection = false;
-                                    if (isGroupOwner) {
-                                        closeChatSocket();
-                                        manager.removeGroup(channel, new ActionListener() {
-                                            @Override
-                                            public void onSuccess() {
-                                                appendStatus("Disconnected from peer");
-                                            }
-
-                                            @Override
-                                            public void onFailure(int reason) {
-                                                appendStatus("Failed to disconnect from peer");
-                                            }
-                                        });
-                                    } else {
-                                        appendStatus("Asking peer to disconnect as we are connected as a client");
-                                        String disconnectStr = "DISCONNECT";
-                                        chatManager.write(disconnectStr.getBytes());
-                                        closeChatSocket();
-                                    }
-
-                                    dialog.cancel();
-                                }
-                            });
-
-                            builder1.show();
-                        }
-                    });
-                    builder.setNegativeButton("Disconnect", new DialogInterface.OnClickListener() {
-                        @Override
-                        public void onClick(DialogInterface dialog, int which) {
-
-                            // Disconnect from device if we are the GO
-                            isInitiatingConnection = false;
-                            if (isGroupOwner) {
-                                closeChatSocket();
-                                manager.removeGroup(channel, new ActionListener() {
+                                // Set up the buttons
+                                builder1.setPositiveButton("Send", new DialogInterface.OnClickListener() {
                                     @Override
-                                    public void onSuccess() {
-                                        appendStatus("Disconnected from peer");
-                                    }
-
-                                    @Override
-                                    public void onFailure(int reason) {
-                                        appendStatus("Failed to disconnect from peer");
+                                    public void onClick(DialogInterface dialog, int which) {
+                                        if (chatManager != null) {
+                                            Log.d(TAG, "Writing msg to ChatManager. Msg is " +
+                                                    input1.getText().toString());
+                                            String messageStr = deviceName + "#=#" + deviceAddress + "#=#" +
+                                                    connectedDeviceName + "#=#" + connectedDeviceMAC + "#=#" +
+                                                    input1.getText().toString();
+                                            chatManager.write(messageStr.getBytes());
+                                            dialog.dismiss();
+                                            appendStatus("Message sent");
+                                        }
                                     }
                                 });
-                            } else {
-                                appendStatus("Asking peer to disconnect as we are connected as a client");
-                                String disconnectStr = "DISCONNECT";
-                                chatManager.write(disconnectStr.getBytes());
-                                closeChatSocket();
-                            }
+                                builder1.setNegativeButton("Disconnect", new DialogInterface.OnClickListener() {
+                                    @Override
+                                    public void onClick(DialogInterface dialog, int which) {
 
-                            dialog.cancel();
+                                        // Disconnect from device if we are the GO
+                                        isInitiatingConnection = false;
+                                        if (isGroupOwner) {
+                                            closeChatSocket();
+                                            manager.removeGroup(channel, new ActionListener() {
+                                                @Override
+                                                public void onSuccess() {
+                                                    appendStatus("Disconnected from peer");
+                                                }
+
+                                                @Override
+                                                public void onFailure(int reason) {
+                                                    appendStatus("Failed to disconnect from peer");
+                                                }
+                                            });
+                                        } else {
+                                            appendStatus("Asking peer to disconnect as we are connected as a client");
+                                            String disconnectStr = "DISCONNECT";
+                                            chatManager.write(disconnectStr.getBytes());
+                                            closeChatSocket();
+                                        }
+
+                                        dialog.cancel();
+                                    }
+                                });
+
+                                builder1.show();
+                            }
+                        });
+                        builder.setNegativeButton("Disconnect", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+
+                                // Disconnect from device if we are the GO
+                                isInitiatingConnection = false;
+                                if (isGroupOwner) {
+                                    closeChatSocket();
+                                    manager.removeGroup(channel, new ActionListener() {
+                                        @Override
+                                        public void onSuccess() {
+                                            appendStatus("Disconnected from peer");
+                                        }
+
+                                        @Override
+                                        public void onFailure(int reason) {
+                                            appendStatus("Failed to disconnect from peer");
+                                        }
+                                    });
+                                } else {
+                                    appendStatus("Asking peer to disconnect as we are connected as a client");
+                                    String disconnectStr = "DISCONNECT";
+                                    chatManager.write(disconnectStr.getBytes());
+                                    closeChatSocket();
+                                }
+
+                                dialog.cancel();
+                            }
+                        });
+                        builder.show();
+                    }
+                    // Data is not meant for this device. Forward to destination
+                    else {
+
+                        // Disconnect from device if we are the GO
+                        isInitiatingConnection = false;
+                        if(isGroupOwner) {
+                            closeChatSocket();
+                            manager.removeGroup(channel, new ActionListener() {
+                                @Override
+                                public void onSuccess() {
+                                    appendStatus("Disconnected from peer");
+                                }
+
+                                @Override
+                                public void onFailure(int reason) {
+                                    appendStatus("Failed to disconnect from peer");
+                                }
+                            });
                         }
-                    });
-                    builder.show();
+                        else {
+                            appendStatus("Asking peer to disconnect as we are connected as a client");
+                            String disconnectStr = "DISCONNECT";
+                            chatManager.write(disconnectStr.getBytes());
+                            closeChatSocket();
+                        }
+
+                        isForwardingMsg = true;
+                        forwardMsgQueue.add(readMessage);
+
+                        mForwardMsgConnectionHandler.postDelayed(mMsgForwardConnectionRunnable,30000);
+
+
+                    }
                 }
                 break;
 
@@ -706,6 +907,47 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
         unregisterReceiver(receiver);
     }
 
+
+    private Runnable mMsgForwardConnectionRunnable = new Runnable() {
+        @Override
+        public void run() {
+            // Connect to next device based on msg dest MAC
+            if (forwardMsgQueue.size() > 0) {
+                String data = forwardMsgQueue.get(0);
+
+                String[] forwardData = data.split("#=#");
+                WiFiP2pService nextHopDetails = ServiceList.getInstance().getNextHop(forwardData[forwardData.length - 2]);
+                if (nextHopDetails == null) {
+                    appendStatus("Cannot reach " + forwardData[forwardData.length - 3]);
+                } else {
+                    connectP2p(nextHopDetails);
+                }
+            }
+        }
+    };
+
+    private Runnable mMsgForwardRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if(forwardMsgQueue.size() > 0) {
+                String data = forwardMsgQueue.remove(0);
+
+                String[] forwardData = data.split("#=#");
+
+
+                if(forwardData[forwardData.length - 2].equals(connectedDeviceMAC)) {
+                    if (chatManager != null) {
+                        Log.d(TAG,"Writing msg to ChatManager. Msg is " +
+                                data);
+                        chatManager.write(data.getBytes());
+                        Log.d(TAG, "Sending message - " + data);
+                        appendStatus("Message forwarded");
+                    }
+                }
+
+            }
+        }
+    };
 
     @Override
     public void onConnectionInfoAvailable(WifiP2pInfo p2pInfo) {
@@ -736,7 +978,30 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
         if(waitDialog.isShowing())
             waitDialog.dismiss();
 
-        if (isInitiatingConnection) {
+        if (isForwardingMsg && isInitiatingConnection) {
+            isForwardingMsg = false;
+
+//            if(forwardMsgQueue.size() > 0) {
+//                String data = forwardMsgQueue.remove(0);
+//
+//                String[] forwardData = data.split("#=#");
+//
+//
+//                if(forwardData[forwardData.length - 2].equals(connectedDeviceMAC)) {
+//                    if (chatManager != null) {
+//                        Log.d(TAG,"Writing msg to ChatManager. Msg is " +
+//                                data);
+//                        chatManager.write(data.getBytes());
+//                        Log.d(TAG, "Sending message - " + data);
+//                        appendStatus("Message forwarded");
+//                    }
+//                }
+//
+//            }
+            mForwardMsgHandler.postDelayed(mMsgForwardRunnable,5000);
+        }
+
+        else if (isInitiatingConnection && !isForwardingMsg) {
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("Connected to " + connectedDeviceName);
 
@@ -758,6 +1023,7 @@ public class WiFiServiceDiscoveryActivity extends Activity implements
                         Log.d(TAG,"Writing msg to ChatManager. Msg is " +
                                 input.getText().toString());
                         String messageStr = deviceName + "#=#" + deviceAddress + "#=#" +
+                                connectedDeviceName + "#=#" + connectedDeviceMAC + "#=#" +
                                 input.getText().toString();
                         chatManager.write(messageStr.getBytes());
                         dialog.dismiss();
